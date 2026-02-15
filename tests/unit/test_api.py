@@ -353,3 +353,156 @@ class TestAgentRunWithContext:
 
         assert result == "Hello Alice"
         mock_completion.assert_called_once()
+
+
+class TestPipelineCommunicationEnabled:
+    def test_init_stores_communication_flag_true(self):
+        p = Pipeline("test", enable_communication=True)
+        assert p._enable_communication is True
+
+    def test_init_stores_communication_flag_false(self):
+        p = Pipeline("test", enable_communication=False)
+        assert p._enable_communication is False
+
+    def test_init_default_communication_disabled(self):
+        p = Pipeline("test")
+        assert p._enable_communication is False
+
+    def test_communication_property_returns_none_before_run(self):
+        p = Pipeline("test", enable_communication=True)
+        assert p.communication is None
+
+
+class TestPipelineAddStepWithCommunication:
+    def test_add_step_sets_agent_name(self):
+        a = Agent(name="worker", model="openai/gpt-4o", instructions="Work")
+        p = Pipeline("test")
+        p.add_step(a)
+
+        spec = p.to_spec()
+        assert spec[0]["agent_name"] == "worker"
+
+    def test_add_step_with_comm_enabled_adds_comm_tools(self):
+        a = Agent(name="agent1", model="openai/gpt-4o", instructions="Test")
+        p = Pipeline("test", enable_communication=True)
+        p.add_step(a)
+
+        spec = p.to_spec()
+        tools = spec[0]["tools"]
+        assert "send_message" in tools
+        assert "check_messages" in tools
+        assert "post_to_board" in tools
+        assert "read_board" in tools
+
+    def test_add_step_with_comm_disabled_no_comm_tools(self):
+        a = Agent(name="agent2", model="openai/gpt-4o", instructions="Test")
+        p = Pipeline("test", enable_communication=False)
+        p.add_step(a)
+
+        spec = p.to_spec()
+        tools = spec[0]["tools"]
+        assert "send_message" not in tools
+        assert "check_messages" not in tools
+        assert "post_to_board" not in tools
+        assert "read_board" not in tools
+
+    def test_add_step_with_agent_tools_and_comm_enabled(self):
+        a = Agent(
+            name="researcher",
+            model="openai/gpt-4o",
+            instructions="Research",
+            tools=[search, calculate],
+        )
+        p = Pipeline("test", enable_communication=True)
+        p.add_step(a)
+
+        spec = p.to_spec()
+        tools = spec[0]["tools"]
+        assert "search" in tools
+        assert "calculate" in tools
+        assert "send_message" in tools
+        assert "check_messages" in tools
+        assert "post_to_board" in tools
+        assert "read_board" in tools
+        assert len(tools) == 6
+
+    def test_add_step_raw_spec_no_comm_tools(self):
+        raw_spec = [{"op": "set", "path": "/foo", "value": "bar"}]
+        p = Pipeline("test", enable_communication=True)
+        p.add_step(raw_spec)
+
+        spec = p.to_spec()
+        assert spec[0]["op"] == "set"
+        assert "tools" not in spec[0]
+
+    def test_add_step_raw_spec_no_agent_name(self):
+        raw_spec = [
+            {
+                "op": "agent_loop",
+                "model": "openai/gpt-4o",
+                "instructions": "Test",
+                "input": "${/input}",
+                "tools": [],
+            }
+        ]
+        p = Pipeline("test", enable_communication=True)
+        p.add_step(raw_spec)
+
+        spec = p.to_spec()
+        assert "agent_name" not in spec[0]
+
+
+class TestPipelineMultipleStepsAgentNames:
+    def test_multiple_agents_each_get_agent_name(self):
+        a1 = Agent(name="first", model="openai/gpt-4o", instructions="First")
+        a2 = Agent(name="second", model="openai/gpt-4o", instructions="Second")
+        a3 = Agent(name="third", model="openai/gpt-4o", instructions="Third")
+
+        p = Pipeline("test")
+        p.add_step(a1, output_path="/step1")
+        p.add_step(a2, output_path="/step2")
+        p.add_step(a3, output_path="/step3")
+
+        spec = p.to_spec()
+        assert spec[0]["agent_name"] == "first"
+        assert spec[1]["agent_name"] == "second"
+        assert spec[2]["agent_name"] == "third"
+
+    def test_multiple_agents_comm_enabled_all_get_comm_tools(self):
+        a1 = Agent(name="alice", model="openai/gpt-4o", instructions="Alice")
+        a2 = Agent(name="bob", model="openai/gpt-4o", instructions="Bob")
+
+        p = Pipeline("test", enable_communication=True)
+        p.add_step(a1)
+        p.add_step(a2)
+
+        spec = p.to_spec()
+        assert "send_message" in spec[0]["tools"]
+        assert "send_message" in spec[1]["tools"]
+        assert spec[0]["agent_name"] == "alice"
+        assert spec[1]["agent_name"] == "bob"
+
+
+class TestPipelineToSpecWithCommunication:
+    def test_to_spec_includes_all_comm_tool_names(self):
+        a = Agent(
+            name="communicator",
+            model="openai/gpt-4o",
+            instructions="Communicate",
+        )
+        p = Pipeline("test", enable_communication=True)
+        p.add_step(a)
+
+        spec = p.to_spec()
+        tools = set(spec[0]["tools"])
+        expected = {"send_message", "check_messages", "post_to_board", "read_board"}
+        assert expected.issubset(tools)
+
+    def test_to_spec_preserves_agent_name_with_comm(self):
+        a = Agent(name="named_agent", model="openai/gpt-4o", instructions="Do")
+        p = Pipeline("test", enable_communication=True)
+        p.add_step(a)
+
+        spec = p.to_spec()
+        assert spec[0]["agent_name"] == "named_agent"
+        assert spec[0]["op"] == "agent_loop"

@@ -1,4 +1,13 @@
 from .api import Agent, Pipeline, agent
+from .comm_tools import COMM_TOOL_NAMES, build_comm_tools
+from .communication import (
+    AgentContext,
+    Blackboard,
+    BoardEntry,
+    CommunicationHub,
+    Mailbox,
+    Message,
+)
 from .events import (
     AgentCompleteEvent,
     EventHandler,
@@ -93,6 +102,15 @@ __all__ = [
     # Retry
     "RetryConfig",
     "with_retry",
+    # Communication
+    "CommunicationHub",
+    "Blackboard",
+    "BoardEntry",
+    "Mailbox",
+    "Message",
+    "AgentContext",
+    "build_comm_tools",
+    "COMM_TOOL_NAMES",
     # Guardrails
     "GuardrailResult",
     "Guardrail",

@@ -21,6 +21,7 @@ from .registry import ToolRegistry
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from .communication import CommunicationHub
     from .observability import Tracer
 
 
@@ -34,11 +35,13 @@ class _AgentMetadataMiddleware(Middleware):
         schemas: list[dict[str, Any]],
         agent_specs: dict[str, Any],
         tracer: Tracer | None = None,
+        communication: CommunicationHub | None = None,
     ) -> None:
         self._registry = registry
         self._schemas = schemas
         self._agent_specs = agent_specs
         self._tracer = tracer
+        self._communication = communication
 
     def process(self, step: Any, ctx: ExecutionContext) -> Any:
         ctx.metadata.setdefault("_tool_registry", self._registry)
@@ -46,6 +49,12 @@ class _AgentMetadataMiddleware(Middleware):
         ctx.metadata.setdefault("_agent_specs", self._agent_specs)
         if self._tracer is not None:
             ctx.metadata.setdefault("_tracer", self._tracer)
+        if self._communication is not None:
+            ctx.metadata.setdefault("_communication", self._communication)
+            if isinstance(step, dict):
+                agent_name = step.get("agent_name")
+                if agent_name:
+                    self._communication.agent_context.current_agent = agent_name
         return step
 
 
@@ -54,6 +63,7 @@ def build_agent_engine(
     tools: dict[str, Callable[..., Any]] | None = None,
     agent_specs: dict[str, Any] | None = None,
     tracer: Tracer | None = None,
+    communication: CommunicationHub | None = None,
     **kwargs: Any,
 ) -> Engine:
     engine = build_default_engine(**kwargs)
@@ -62,11 +72,19 @@ def build_agent_engine(
     for name, fn in (tools or {}).items():
         registry.register(name, fn)
 
+    if communication is not None:
+        from .comm_tools import build_comm_tools
+
+        for name, fn in build_comm_tools(communication).items():
+            registry.register(name, fn)
+
     schemas = registry.generate_schemas()
     specs = agent_specs or {}
 
     engine.main_pipeline.register_middleware(
-        _AgentMetadataMiddleware(registry, schemas, specs, tracer=tracer)
+        _AgentMetadataMiddleware(
+            registry, schemas, specs, tracer=tracer, communication=communication,
+        )
     )
 
     handlers = [

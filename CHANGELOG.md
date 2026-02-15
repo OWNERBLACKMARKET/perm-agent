@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.3.0 (2026-02-15)
+
+### Added
+- **Inter-agent communication**: Blackboard + Mailbox system for agent coordination
+  - `Blackboard`: shared key-value store visible to all agents in a pipeline
+  - `Mailbox`: per-agent message queues for directed messaging between agents
+  - `CommunicationHub`: facade combining Blackboard, Mailbox, and AgentContext
+- **Communication tools** (LLM-callable):
+  - `send_message`: send directed messages to other agents
+  - `check_messages`: read inbox (consume or peek)
+  - `post_to_board`: write to shared blackboard
+  - `read_board`: read one key or all entries from blackboard
+- **Pipeline communication**: `Pipeline(enable_communication=True)` to enable inter-agent communication
+- `AgentContext`: tracks current agent identity across pipeline steps
+- `build_comm_tools()` factory and `COMM_TOOL_NAMES` constant
+- Full public API exports: `CommunicationHub`, `Blackboard`, `BoardEntry`, `Mailbox`, `Message`, `AgentContext`
+
+### Design
+- Zero changes to agent loop — communication happens through LLM tool calls
+- `CommunicationHub` injected via existing middleware, no new dependencies
+- Fully backward compatible: `enable_communication=False` by default
+
 ## 0.2.0 (2026-02-15)
 
 ### Added

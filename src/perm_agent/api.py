@@ -8,6 +8,8 @@ from .factory import build_agent_engine
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from .communication import CommunicationHub
+
 
 class Agent:
     """High-level Python API for building agents on top of the JSON spec engine."""
@@ -130,10 +132,17 @@ def agent(
 class Pipeline:
     """Multi-step pipeline that chains agents and spec steps together."""
 
-    def __init__(self, name: str) -> None:
+    def __init__(self, name: str, *, enable_communication: bool = False) -> None:
         self.name = name
         self._steps: list[dict[str, Any]] = []
         self._tools: dict[str, Callable[..., Any]] = {}
+        self._enable_communication = enable_communication
+        self._communication: CommunicationHub | None = None
+
+    @property
+    def communication(self) -> CommunicationHub | None:
+        """Access the CommunicationHub after run() for inspection."""
+        return self._communication
 
     def add_step(
         self,
@@ -155,6 +164,11 @@ class Pipeline:
 
             tool_names = [fn.__name__ for fn in agent_or_spec.tools]
 
+            if self._enable_communication:
+                from .comm_tools import COMM_TOOL_NAMES
+
+                tool_names = tool_names + list(COMM_TOOL_NAMES)
+
             # Use input_map to build the input expression, or default
             input_expr = input_map["input"] if input_map and "input" in input_map else "${/input}"
 
@@ -166,6 +180,7 @@ class Pipeline:
                 "tools": tool_names,
                 "max_iterations": agent_or_spec.max_iterations,
                 "memory_limit": agent_or_spec.memory_limit,
+                "agent_name": agent_or_spec.name,
             }
             if agent_or_spec.temperature is not None:
                 step["temperature"] = agent_or_spec.temperature
@@ -191,7 +206,17 @@ class Pipeline:
 
     def run(self, input: dict[str, Any]) -> dict[str, Any]:
         """Execute the pipeline with the given input dict."""
-        engine = build_agent_engine(tools=self._tools if self._tools else None)
+        comm = None
+        if self._enable_communication:
+            from .communication import CommunicationHub
+
+            comm = CommunicationHub()
+            self._communication = comm
+
+        engine = build_agent_engine(
+            tools=self._tools if self._tools else None,
+            communication=comm,
+        )
         result = engine.apply(self._steps, source=input, dest={})
         return result if isinstance(result, dict) else {"result": result}
 
