@@ -29,7 +29,14 @@ def _make_tool_response(tool_calls: list[dict]) -> MagicMock:
         "role": "assistant",
         "content": None,
         "tool_calls": [
-            {"id": tc["id"], "type": "function", "function": {"name": tc["name"], "arguments": json.dumps(tc["args"])}}
+            {
+                "id": tc["id"],
+                "type": "function",
+                "function": {
+                    "name": tc["name"],
+                    "arguments": json.dumps(tc["args"]),
+                },
+            }
             for tc in tool_calls
         ],
     }
@@ -101,7 +108,7 @@ class TestAgentLoopHandler:
                 "path": "/result",
             }
         ]
-        result = engine.apply(spec, source={}, dest={})
+        engine.apply(spec, source={}, dest={})
         assert mock_completion.call_count == 3
 
     @patch("litellm.completion")

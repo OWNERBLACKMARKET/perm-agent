@@ -14,12 +14,40 @@ class ToolHandler(ActionHandler):
         registry = ctx.metadata["_tool_registry"]
         fn = registry.get(name)
 
-        if isinstance(args, dict):
-            result = fn(**args)
-        elif isinstance(args, list):
-            result = fn(*args)
-        else:
-            result = fn(args)
+        tracer = ctx.metadata.get("_tracer")
+        span_id = None
+        if tracer:
+            span_id = tracer.start_span("tool", name, metadata={"tool": name})
+            tracer.add_event(
+                span_id,
+                "tool.execution",
+                {
+                    "tool": name,
+                    "args": args,
+                },
+            )
+
+        try:
+            if isinstance(args, dict):
+                result = fn(**args)
+            elif isinstance(args, list):
+                result = fn(*args)
+            else:
+                result = fn(args)
+        except Exception as exc:
+            if tracer and span_id:
+                tracer.end_span(span_id, status="error", error=str(exc))
+            raise
+
+        if tracer and span_id:
+            tracer.add_event(
+                span_id,
+                "tool.result",
+                {
+                    "result_type": type(result).__name__,
+                },
+            )
+            tracer.end_span(span_id)
 
         path = step.get("path")
         if path:

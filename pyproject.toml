@@ -1,20 +1,92 @@
-[build-system]
-requires = ["setuptools>=68.0", "wheel"]
-build-backend = "setuptools.build_meta"
-
 [project]
 name = "perm-agent"
-version = "0.1.0"
-description = "Declarative JSON-native AI agent framework built on j-perm"
+version = "0.2.0"
+description = "Declarative, JSON-native AI agent framework. Define workflows as data, not code."
+readme = "README.md"
+license = { text = "MIT" }
 requires-python = ">=3.10"
-dependencies = ["j-perm>=1.2.0", "litellm>=1.0"]
+authors = [
+    { name = "Denys", email = "denys@perm-agent.dev" },
+]
+keywords = [
+    "ai",
+    "agents",
+    "llm",
+    "multi-agent",
+    "workflow",
+    "orchestration",
+    "declarative",
+    "json",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Typing :: Typed",
+]
+dependencies = [
+    "j-perm>=1.2.0",
+    "litellm>=1.0",
+    "pydantic>=2.0",
+]
 
-[project.optional-dependencies]
-dev = ["pytest>=8.0", "pytest-cov>=5.0"]
+[project.urls]
+Homepage = "https://github.com/Shtomuch/perm-agent"
+Documentation = "https://github.com/Shtomuch/perm-agent#readme"
+Repository = "https://github.com/Shtomuch/perm-agent"
+Issues = "https://github.com/Shtomuch/perm-agent/issues"
+Changelog = "https://github.com/Shtomuch/perm-agent/blob/main/CHANGELOG.md"
 
-[tool.setuptools.packages.find]
-where = ["src"]
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "pytest-asyncio>=0.23.0",
+    "ruff>=0.9.0",
+    "mypy>=1.10",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/perm_agent"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "SIM",  # flake8-simplify
+    "TCH",  # flake8-type-checking
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["perm_agent"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true

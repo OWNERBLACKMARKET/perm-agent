@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any
 
 from j_perm import (
     ActionNode,
@@ -14,8 +14,14 @@ from j_perm import (
 from .handlers.agent_loop import AgentLoopHandler
 from .handlers.handoff import HandoffHandler
 from .handlers.llm import LlmHandler
+from .handlers.streaming import StreamingAgentLoopHandler, StreamingLlmHandler
 from .handlers.tool import ToolHandler
 from .registry import ToolRegistry
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from .observability import Tracer
 
 
 class _AgentMetadataMiddleware(Middleware):
@@ -27,15 +33,19 @@ class _AgentMetadataMiddleware(Middleware):
         registry: ToolRegistry,
         schemas: list[dict[str, Any]],
         agent_specs: dict[str, Any],
+        tracer: Tracer | None = None,
     ) -> None:
         self._registry = registry
         self._schemas = schemas
         self._agent_specs = agent_specs
+        self._tracer = tracer
 
     def process(self, step: Any, ctx: ExecutionContext) -> Any:
         ctx.metadata.setdefault("_tool_registry", self._registry)
         ctx.metadata.setdefault("_tool_schemas", self._schemas)
         ctx.metadata.setdefault("_agent_specs", self._agent_specs)
+        if self._tracer is not None:
+            ctx.metadata.setdefault("_tracer", self._tracer)
         return step
 
 
@@ -43,6 +53,7 @@ def build_agent_engine(
     *,
     tools: dict[str, Callable[..., Any]] | None = None,
     agent_specs: dict[str, Any] | None = None,
+    tracer: Tracer | None = None,
     **kwargs: Any,
 ) -> Engine:
     engine = build_default_engine(**kwargs)
@@ -55,7 +66,7 @@ def build_agent_engine(
     specs = agent_specs or {}
 
     engine.main_pipeline.register_middleware(
-        _AgentMetadataMiddleware(registry, schemas, specs)
+        _AgentMetadataMiddleware(registry, schemas, specs, tracer=tracer)
     )
 
     handlers = [
@@ -63,6 +74,8 @@ def build_agent_engine(
         ("llm", LlmHandler()),
         ("agent_loop", AgentLoopHandler()),
         ("handoff", HandoffHandler()),
+        ("streaming_llm", StreamingLlmHandler()),
+        ("streaming_agent_loop", StreamingAgentLoopHandler()),
     ]
 
     for op_name, handler in handlers:

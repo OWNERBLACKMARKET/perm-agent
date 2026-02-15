@@ -1,5 +1,6 @@
 __pycache__/
 *.py[cod]
+*$py.class
 *.egg-info/
 dist/
 build/
@@ -10,3 +11,12 @@ build/
 htmlcov/
 .venv/
 .env
+.mypy_cache/
+.ruff_cache/
+*.so
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+uv.lock

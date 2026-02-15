@@ -131,7 +131,7 @@ class TestLlmWithJPermOps:
                 "do": [
                     {
                         "op": "llm",
-                        "model": "openai/gpt-4o",
+                        "model": "openai/gpt-5.1",
                         "messages": [{"role": "user", "content": "Summarize: ${/doc}"}],
                         "path": "/current_summary",
                     },
@@ -152,10 +152,12 @@ class TestHandoffWorkflow:
         extractor = [{"/extracted": "${/raw}"}]
         formatter = [{"/formatted": "${/extracted}"}]
 
-        engine = build_agent_engine(agent_specs={
-            "extractor": extractor,
-            "formatter": formatter,
-        })
+        engine = build_agent_engine(
+            agent_specs={
+                "extractor": extractor,
+                "formatter": formatter,
+            }
+        )
 
         spec = [
             {"op": "handoff", "to": "extractor", "input": {"raw": "${/data}"}, "path": "/step1"},
