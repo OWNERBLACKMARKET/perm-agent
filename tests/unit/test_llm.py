@@ -1,7 +1,5 @@
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from perm_agent import build_agent_engine
 
 
@@ -13,9 +11,9 @@ def _make_response(content: str) -> MagicMock:
 
 
 class TestLlmHandler:
-    @patch("perm_agent.handlers.llm.litellm")
-    def test_basic_call(self, mock_litellm):
-        mock_litellm.completion.return_value = _make_response("Hello!")
+    @patch("litellm.completion")
+    def test_basic_call(self, mock_completion):
+        mock_completion.return_value = _make_response("Hello!")
         engine = build_agent_engine()
 
         spec = [
@@ -29,13 +27,13 @@ class TestLlmHandler:
         result = engine.apply(spec, source={}, dest={})
 
         assert result == {"answer": "Hello!"}
-        mock_litellm.completion.assert_called_once()
-        call_kwargs = mock_litellm.completion.call_args[1]
+        mock_completion.assert_called_once()
+        call_kwargs = mock_completion.call_args[1]
         assert call_kwargs["model"] == "openai/gpt-4o"
 
-    @patch("perm_agent.handlers.llm.litellm")
-    def test_template_in_messages(self, mock_litellm):
-        mock_litellm.completion.return_value = _make_response("Paris")
+    @patch("litellm.completion")
+    def test_template_in_messages(self, mock_completion):
+        mock_completion.return_value = _make_response("Paris")
         engine = build_agent_engine()
 
         spec = [
@@ -49,12 +47,12 @@ class TestLlmHandler:
         result = engine.apply(spec, source={"country": "France"}, dest={})
 
         assert result == {"answer": "Paris"}
-        call_msgs = mock_litellm.completion.call_args[1]["messages"]
+        call_msgs = mock_completion.call_args[1]["messages"]
         assert call_msgs[0]["content"] == "Capital of France?"
 
-    @patch("perm_agent.handlers.llm.litellm")
-    def test_json_response_format(self, mock_litellm):
-        mock_litellm.completion.return_value = _make_response('{"name": "Alice", "age": 30}')
+    @patch("litellm.completion")
+    def test_json_response_format(self, mock_completion):
+        mock_completion.return_value = _make_response('{"name": "Alice", "age": 30}')
         engine = build_agent_engine()
 
         spec = [
@@ -69,12 +67,12 @@ class TestLlmHandler:
         result = engine.apply(spec, source={}, dest={})
 
         assert result == {"parsed": {"name": "Alice", "age": 30}}
-        call_kwargs = mock_litellm.completion.call_args[1]
+        call_kwargs = mock_completion.call_args[1]
         assert call_kwargs["response_format"] == {"type": "json_object"}
 
-    @patch("perm_agent.handlers.llm.litellm")
-    def test_custom_temperature(self, mock_litellm):
-        mock_litellm.completion.return_value = _make_response("ok")
+    @patch("litellm.completion")
+    def test_custom_temperature(self, mock_completion):
+        mock_completion.return_value = _make_response("ok")
         engine = build_agent_engine()
 
         spec = [
@@ -88,12 +86,12 @@ class TestLlmHandler:
         ]
         engine.apply(spec, source={}, dest={})
 
-        call_kwargs = mock_litellm.completion.call_args[1]
+        call_kwargs = mock_completion.call_args[1]
         assert call_kwargs["temperature"] == 0.2
 
-    @patch("perm_agent.handlers.llm.litellm")
-    def test_without_path(self, mock_litellm):
-        mock_litellm.completion.return_value = _make_response("direct")
+    @patch("litellm.completion")
+    def test_without_path(self, mock_completion):
+        mock_completion.return_value = _make_response("direct")
         engine = build_agent_engine()
 
         spec = [

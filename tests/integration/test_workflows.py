@@ -34,9 +34,9 @@ class TestJPermOpsStillWork:
         spec = [
             {
                 "op": "foreach",
-                "items": "${/items}",
-                "item_var": "item",
-                "actions": [{"op": "set", "path": "/last", "value": "${/item}"}],
+                "in": "/items",
+                "as": "item",
+                "do": [{"op": "set", "path": "/last", "value": "${/item}"}],
             }
         ]
         result = engine.apply(spec, source={"items": [1, 2, 3]}, dest={})
@@ -47,7 +47,7 @@ class TestJPermOpsStillWork:
         spec = [
             {
                 "op": "if",
-                "condition": "${/flag}",
+                "cond": "${/flag}",
                 "then": [{"op": "set", "path": "/r", "value": "yes"}],
                 "else": [{"op": "set", "path": "/r", "value": "no"}],
             }
@@ -79,9 +79,9 @@ class TestToolThenTransform:
             {"op": "tool", "name": "calculate", "args": {"expression": "2+2"}, "path": "/sum"},
             {
                 "op": "foreach",
-                "items": "${/tags}",
-                "item_var": "tag",
-                "actions": [{"op": "set", "path": "/last_tag", "value": "${/tag}"}],
+                "in": "/tags",
+                "as": "tag",
+                "do": [{"op": "set", "path": "/last_tag", "value": "${/tag}"}],
             },
         ]
         result = engine.apply(spec, source={"tags": ["a", "b"]}, dest={})
@@ -90,9 +90,9 @@ class TestToolThenTransform:
 
 
 class TestLlmWithJPermOps:
-    @patch("perm_agent.handlers.llm.litellm")
-    def test_llm_then_if(self, mock_litellm):
-        mock_litellm.completion.return_value = _make_text_response("positive")
+    @patch("litellm.completion")
+    def test_llm_then_if(self, mock_completion):
+        mock_completion.return_value = _make_text_response("positive")
         engine = build_agent_engine()
 
         spec = [
@@ -104,7 +104,8 @@ class TestLlmWithJPermOps:
             },
             {
                 "op": "if",
-                "condition": {"$eval": "@:/sentiment == 'positive'"},
+                "path": "@:/sentiment",
+                "equals": "positive",
                 "then": [{"op": "set", "path": "/action", "value": "celebrate"}],
                 "else": [{"op": "set", "path": "/action", "value": "investigate"}],
             },
@@ -113,9 +114,9 @@ class TestLlmWithJPermOps:
         assert result["sentiment"] == "positive"
         assert result["action"] == "celebrate"
 
-    @patch("perm_agent.handlers.llm.litellm")
-    def test_foreach_with_llm(self, mock_litellm):
-        mock_litellm.completion.side_effect = [
+    @patch("litellm.completion")
+    def test_foreach_with_llm(self, mock_completion):
+        mock_completion.side_effect = [
             _make_text_response("Summary of doc1"),
             _make_text_response("Summary of doc2"),
         ]
@@ -125,9 +126,9 @@ class TestLlmWithJPermOps:
             {"op": "set", "path": "/summaries", "value": []},
             {
                 "op": "foreach",
-                "items": "${/docs}",
-                "item_var": "doc",
-                "actions": [
+                "in": "/docs",
+                "as": "doc",
+                "do": [
                     {
                         "op": "llm",
                         "model": "openai/gpt-4o",
@@ -135,9 +136,9 @@ class TestLlmWithJPermOps:
                         "path": "/current_summary",
                     },
                     {
-                        "op": "update",
-                        "path": "/summaries",
-                        "value": "@:/current_summary",
+                        "op": "set",
+                        "path": "/summaries/-",
+                        "value": "${@:/current_summary}",
                     },
                 ],
             },
@@ -158,7 +159,7 @@ class TestHandoffWorkflow:
 
         spec = [
             {"op": "handoff", "to": "extractor", "input": {"raw": "${/data}"}, "path": "/step1"},
-            {"op": "set", "path": "/final", "value": "@:/step1/extracted"},
+            {"op": "set", "path": "/final", "value": "${@:/step1/extracted}"},
         ]
         result = engine.apply(spec, source={"data": "hello"}, dest={})
         assert result["step1"] == {"extracted": "hello"}

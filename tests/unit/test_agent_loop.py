@@ -43,9 +43,9 @@ def search(query: str) -> str:
 
 
 class TestAgentLoopHandler:
-    @patch("perm_agent.handlers.agent_loop.litellm")
-    def test_direct_response(self, mock_litellm):
-        mock_litellm.completion.return_value = _make_text_response("The answer is 42")
+    @patch("litellm.completion")
+    def test_direct_response(self, mock_completion):
+        mock_completion.return_value = _make_text_response("The answer is 42")
         engine = build_agent_engine(tools={"search": search})
 
         spec = [
@@ -61,9 +61,9 @@ class TestAgentLoopHandler:
         result = engine.apply(spec, source={}, dest={})
         assert result == {"result": "The answer is 42"}
 
-    @patch("perm_agent.handlers.agent_loop.litellm")
-    def test_tool_call_then_response(self, mock_litellm):
-        mock_litellm.completion.side_effect = [
+    @patch("litellm.completion")
+    def test_tool_call_then_response(self, mock_completion):
+        mock_completion.side_effect = [
             _make_tool_response([{"id": "call_1", "name": "search", "args": {"query": "test"}}]),
             _make_text_response("Based on search: Found: test"),
         ]
@@ -81,11 +81,11 @@ class TestAgentLoopHandler:
         ]
         result = engine.apply(spec, source={}, dest={})
         assert result == {"result": "Based on search: Found: test"}
-        assert mock_litellm.completion.call_count == 2
+        assert mock_completion.call_count == 2
 
-    @patch("perm_agent.handlers.agent_loop.litellm")
-    def test_max_iterations(self, mock_litellm):
-        mock_litellm.completion.return_value = _make_tool_response(
+    @patch("litellm.completion")
+    def test_max_iterations(self, mock_completion):
+        mock_completion.return_value = _make_tool_response(
             [{"id": "call_x", "name": "search", "args": {"query": "loop"}}]
         )
         engine = build_agent_engine(tools={"search": search})
@@ -102,11 +102,11 @@ class TestAgentLoopHandler:
             }
         ]
         result = engine.apply(spec, source={}, dest={})
-        assert mock_litellm.completion.call_count == 3
+        assert mock_completion.call_count == 3
 
-    @patch("perm_agent.handlers.agent_loop.litellm")
-    def test_template_input(self, mock_litellm):
-        mock_litellm.completion.return_value = _make_text_response("Done")
+    @patch("litellm.completion")
+    def test_template_input(self, mock_completion):
+        mock_completion.return_value = _make_text_response("Done")
         engine = build_agent_engine(tools={"search": search})
 
         spec = [
@@ -122,13 +122,13 @@ class TestAgentLoopHandler:
         result = engine.apply(spec, source={"question": "What is Python?"}, dest={})
         assert result == {"result": "Done"}
 
-        call_kwargs = mock_litellm.completion.call_args[1]
+        call_kwargs = mock_completion.call_args[1]
         user_msg = [m for m in call_kwargs["messages"] if m["role"] == "user"][0]
         assert user_msg["content"] == "What is Python?"
 
-    @patch("perm_agent.handlers.agent_loop.litellm")
-    def test_without_path(self, mock_litellm):
-        mock_litellm.completion.return_value = _make_text_response("direct")
+    @patch("litellm.completion")
+    def test_without_path(self, mock_completion):
+        mock_completion.return_value = _make_text_response("direct")
         engine = build_agent_engine(tools={"search": search})
 
         spec = [

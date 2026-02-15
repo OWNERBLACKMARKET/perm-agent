@@ -3,13 +3,12 @@ from __future__ import annotations
 import json
 from typing import Any
 
+import litellm
 from j_perm import ActionHandler, ExecutionContext
 
 
 class AgentLoopHandler(ActionHandler):
     def execute(self, step: Any, ctx: ExecutionContext) -> Any:
-        import litellm
-
         model = ctx.engine.process_value(step["model"], ctx)
         instructions = ctx.engine.process_value(step["instructions"], ctx)
         user_input = ctx.engine.process_value(step["input"], ctx)

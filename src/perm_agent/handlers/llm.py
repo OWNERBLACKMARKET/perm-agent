@@ -3,13 +3,12 @@ from __future__ import annotations
 import json
 from typing import Any
 
+import litellm
 from j_perm import ActionHandler, ExecutionContext
 
 
 class LlmHandler(ActionHandler):
     def execute(self, step: Any, ctx: ExecutionContext) -> Any:
-        import litellm
-
         model = ctx.engine.process_value(step["model"], ctx)
         messages = ctx.engine.process_value(step["messages"], ctx)
         temperature = step.get("temperature", 0.7)
