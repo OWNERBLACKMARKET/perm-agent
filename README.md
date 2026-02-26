@@ -68,6 +68,431 @@ That JSON spec can be saved to a database, loaded later, modified programmatical
 
 ---
 
+## Use cases
+
+### Customer support automation
+
+Build a multi-agent support system where a triage agent classifies incoming tickets, specialist agents handle specific domains, and a QA agent reviews responses before sending.
+
+```python
+from perm_agent import Agent, Pipeline, tool
+
+@tool
+def lookup_order(order_id: str) -> str:
+    """Look up order details in the database."""
+    return db.orders.get(order_id).to_json()
+
+@tool
+def lookup_account(email: str) -> str:
+    """Look up customer account details."""
+    return db.accounts.get_by_email(email).to_json()
+
+@tool
+def create_ticket(summary: str, priority: str, category: str) -> str:
+    """Create a support ticket in the system."""
+    return ticketing.create(summary=summary, priority=priority, category=category)
+
+triage = Agent(
+    name="triage",
+    model="openai/gpt-4o",
+    instructions="""Classify the customer request into one of: billing, shipping, technical, general.
+    Extract key entities (order IDs, emails, product names).
+    Output a structured summary for the specialist agent.""",
+)
+
+specialist = Agent(
+    name="specialist",
+    model="openai/gpt-4o",
+    instructions="""You handle customer issues. Look up relevant data using tools.
+    Be empathetic, concise, and solution-oriented.
+    If you cannot resolve, escalate with a clear summary.""",
+    tools=[lookup_order, lookup_account, create_ticket],
+)
+
+qa_reviewer = Agent(
+    name="qa",
+    model="anthropic/claude-sonnet-4-20250514",
+    instructions="""Review the draft response for:
+    - Accuracy of information
+    - Tone and professionalism
+    - Whether the issue is actually resolved
+    Output the final approved response or request revision.""",
+)
+
+pipeline = Pipeline("customer-support", enable_communication=True)
+pipeline.add_step(triage, output_path="/classification")
+pipeline.add_step(specialist, input_map={"input": "@:/classification"}, output_path="/draft")
+pipeline.add_step(qa_reviewer, input_map={"input": "@:/draft"}, output_path="/response")
+
+result = pipeline.run({"input": "I ordered 3 days ago and haven't received shipping info. Order #12345"})
+```
+
+### Content generation pipeline
+
+A research-write-edit pipeline for producing high-quality articles, reports, or documentation.
+
+```python
+from perm_agent import Agent, Pipeline, tool
+
+@tool
+def web_search(query: str, max_results: int = 5) -> str:
+    """Search the web for up-to-date information."""
+    return search_api.query(query, limit=max_results)
+
+@tool
+def fetch_page(url: str) -> str:
+    """Fetch and extract text from a web page."""
+    return scraper.extract_text(url)
+
+researcher = Agent(
+    name="researcher",
+    model="openai/gpt-4o",
+    instructions="""Research the topic thoroughly using web search.
+    Gather facts, statistics, and expert opinions.
+    Cite sources. Output structured research notes.""",
+    tools=[web_search, fetch_page],
+)
+
+writer = Agent(
+    name="writer",
+    model="anthropic/claude-sonnet-4-20250514",
+    instructions="""Write a well-structured article based on the research.
+    Use clear headings, engaging introduction, and actionable conclusion.
+    Target audience: technical professionals.""",
+)
+
+editor = Agent(
+    name="editor",
+    model="openai/gpt-4o",
+    instructions="""Edit the article for:
+    - Grammar and clarity
+    - Logical flow between sections
+    - Factual consistency with the research
+    - Remove filler words and redundancy
+    Output the polished final version.""",
+)
+
+pipeline = Pipeline("content-pipeline")
+pipeline.add_step(researcher, output_path="/research")
+pipeline.add_step(writer, input_map={"input": "@:/research"}, output_path="/draft")
+pipeline.add_step(editor, input_map={"input": "@:/draft"}, output_path="/article")
+
+result = pipeline.run({"input": "Write an article about WebAssembly in 2026"})
+print(result["article"])
+```
+
+### Data extraction and analysis
+
+Extract structured data from unstructured sources, validate it, and produce analysis.
+
+```python
+from pydantic import BaseModel
+from perm_agent import Agent, StructuredOutput, tool
+
+class CompanyInfo(BaseModel):
+    name: str
+    industry: str
+    revenue_usd: float | None
+    employee_count: int | None
+    headquarters: str
+    key_products: list[str]
+
+@tool
+def search_company(name: str) -> str:
+    """Search for company information."""
+    return company_api.search(name)
+
+agent = Agent(
+    name="extractor",
+    model="openai/gpt-4o",
+    instructions="""Extract company information from the provided data.
+    Return a JSON object matching this schema:
+    {schema}
+    If a field is unknown, use null.""".format(
+        schema=StructuredOutput(CompanyInfo).json_schema()
+    ),
+    tools=[search_company],
+)
+
+raw_result = agent.run("Get info about SpaceX")
+company = StructuredOutput(CompanyInfo).parse(raw_result)
+print(f"{company.name}: {company.industry}, {company.employee_count} employees")
+```
+
+### Dynamic workflow engine (workflows-as-data)
+
+Store AI workflows in a database and execute them on demand. This is the core differentiator of perm-agent -- workflows are JSON, not code.
+
+```python
+import json
+from perm_agent import build_agent_engine
+
+# Workflows stored in your database
+WORKFLOWS_DB = {
+    "summarize": [
+        {
+            "op": "agent_loop",
+            "model": "openai/gpt-4o",
+            "instructions": "Summarize the text in 3 bullet points.",
+            "input": "${/text}",
+            "tools": [],
+            "path": "/summary",
+        }
+    ],
+    "translate": [
+        {
+            "op": "llm",
+            "model": "openai/gpt-4o",
+            "messages": [
+                {"role": "user", "content": "Translate to ${/target_lang}: ${/text}"}
+            ],
+            "path": "/translation",
+        }
+    ],
+    "research-and-summarize": [
+        {
+            "op": "agent_loop",
+            "model": "openai/gpt-4o",
+            "instructions": "Research the topic using available tools.",
+            "input": "${/query}",
+            "tools": ["web_search"],
+            "path": "/research",
+        },
+        {
+            "op": "llm",
+            "model": "anthropic/claude-sonnet-4-20250514",
+            "messages": [
+                {"role": "user", "content": "Write an executive summary:\n${@:/research}"}
+            ],
+            "path": "/summary",
+        },
+    ],
+}
+
+engine = build_agent_engine(tools={"web_search": web_search})
+
+# Load and execute any workflow dynamically
+def run_workflow(workflow_name: str, inputs: dict) -> dict:
+    spec = WORKFLOWS_DB[workflow_name]
+    return engine.apply(spec, source=inputs, dest={})
+
+# API endpoint, CLI command, or queue worker can call this
+result = run_workflow("research-and-summarize", {"query": "AI regulation in Europe"})
+```
+
+### Code review assistant
+
+An agent that reviews pull requests, checking for bugs, security issues, and style violations.
+
+```python
+from perm_agent import Agent, Pipeline, tool
+
+@tool
+def get_diff(pr_number: int) -> str:
+    """Get the diff of a pull request."""
+    return github.pulls.get(pr_number).diff()
+
+@tool
+def get_file_content(path: str, ref: str = "main") -> str:
+    """Get file content from the repository."""
+    return github.repos.get_content(path, ref=ref)
+
+@tool
+def post_review_comment(pr_number: int, body: str, path: str, line: int) -> str:
+    """Post an inline review comment on a PR."""
+    return github.pulls.create_comment(pr_number, body=body, path=path, line=line)
+
+security_reviewer = Agent(
+    name="security",
+    model="openai/gpt-4o",
+    instructions="""Review the code diff for security vulnerabilities:
+    - SQL injection, XSS, command injection
+    - Hardcoded secrets or credentials
+    - Insecure deserialization
+    - Missing input validation
+    Report each finding with file path and line number.""",
+    tools=[get_diff, get_file_content],
+)
+
+logic_reviewer = Agent(
+    name="logic",
+    model="anthropic/claude-sonnet-4-20250514",
+    instructions="""Review the code diff for logic errors:
+    - Off-by-one errors, null pointer risks
+    - Race conditions, missing error handling
+    - Broken edge cases
+    - Performance issues (N+1 queries, unnecessary loops)
+    Report each finding with file path and line number.""",
+    tools=[get_diff, get_file_content],
+)
+
+summarizer = Agent(
+    name="summarizer",
+    model="openai/gpt-4o",
+    instructions="""Combine the security and logic reviews into a single
+    structured review. Group by severity (critical, warning, info).
+    Post inline comments for critical issues.""",
+    tools=[post_review_comment],
+)
+
+pipeline = Pipeline("code-review", enable_communication=True)
+pipeline.add_step(security_reviewer, output_path="/security_review")
+pipeline.add_step(logic_reviewer, output_path="/logic_review")
+pipeline.add_step(
+    summarizer,
+    input_map={"input": "Security: ${@:/security_review}\nLogic: ${@:/logic_review}"},
+    output_path="/final_review",
+)
+
+result = pipeline.run({"input": "Review PR #42"})
+```
+
+### Chatbot with tool access and streaming
+
+Build an interactive assistant with real-time token streaming and tool usage events.
+
+```python
+from perm_agent import build_agent_engine, TokenEvent, ToolCallEvent, ToolResultEvent, tool
+
+@tool
+def get_weather(city: str) -> str:
+    """Get current weather for a city."""
+    return weather_api.current(city)
+
+@tool
+def book_restaurant(name: str, date: str, party_size: int) -> str:
+    """Book a table at a restaurant."""
+    return booking_api.reserve(name=name, date=date, guests=party_size)
+
+engine = build_agent_engine(tools={
+    "get_weather": get_weather,
+    "book_restaurant": book_restaurant,
+})
+
+def handle_message(user_input: str) -> None:
+    def on_event(event):
+        if isinstance(event, TokenEvent):
+            print(event.token, end="", flush=True)  # stream to UI
+        elif isinstance(event, ToolCallEvent):
+            print(f"\n  [using {event.tool_name}...]")
+        elif isinstance(event, ToolResultEvent):
+            print(f"  [done]")
+
+    spec = [
+        {
+            "op": "streaming_agent_loop",
+            "model": "openai/gpt-4o",
+            "instructions": """You are a helpful travel assistant.
+            You can check weather and book restaurants.""",
+            "input": user_input,
+            "tools": ["get_weather", "book_restaurant"],
+            "on_event": on_event,
+            "path": "/response",
+        }
+    ]
+
+    engine.apply(spec, source={}, dest={})
+    print()  # newline after streaming
+
+handle_message("What's the weather in Paris? And book Le Cinq for 2 on Friday.")
+```
+
+### Multi-agent coordination with communication
+
+Agents that actively communicate through a shared blackboard and direct messages during execution.
+
+```python
+from perm_agent import Agent, Pipeline, tool
+
+@tool
+def analyze_metrics(service: str) -> str:
+    """Pull performance metrics for a service."""
+    return monitoring.get_metrics(service, period="24h")
+
+@tool
+def check_logs(service: str, level: str = "error") -> str:
+    """Search service logs for errors."""
+    return logging.search(service=service, level=level, period="24h")
+
+diagnostician = Agent(
+    name="diagnostician",
+    model="openai/gpt-4o",
+    instructions="""Analyze the service health issue.
+    - Pull metrics and logs using tools
+    - Post your findings to the board with post_to_board("diagnosis", ...)
+    - Send a message to the 'resolver' agent with your top hypothesis.""",
+    tools=[analyze_metrics, check_logs],
+)
+
+resolver = Agent(
+    name="resolver",
+    model="openai/gpt-4o",
+    instructions="""You receive a diagnosis from the diagnostician.
+    - Read the board with read_board("diagnosis") for full context
+    - Check your messages with check_messages()
+    - Propose a remediation plan
+    - Post the plan to the board with post_to_board("plan", ...)""",
+    tools=[],
+)
+
+pipeline = Pipeline("incident-response", enable_communication=True)
+pipeline.add_step(diagnostician, output_path="/diagnosis")
+pipeline.add_step(resolver, input_map={"input": "@:/diagnosis"}, output_path="/resolution")
+
+result = pipeline.run({"input": "API latency spike on payment-service"})
+
+# Inspect what agents communicated
+hub = pipeline.communication
+print("Board:", hub.blackboard.read_all())
+print("Messages:", hub.mailbox.all_messages)
+```
+
+### Observability and cost monitoring
+
+Track every LLM call, tool execution, and token usage across your pipelines.
+
+```python
+from perm_agent import Agent, Pipeline, Tracer, ConsoleTracerHook, CostTracker
+
+cost = CostTracker()
+tracer = Tracer(hooks=[ConsoleTracerHook(), cost])
+
+# Tracer integrates with any pipeline via the engine
+from perm_agent import build_agent_engine
+
+engine = build_agent_engine(
+    tools={"search": search, "calculate": calculate},
+    tracer=tracer,
+)
+
+spec = [
+    {
+        "op": "agent_loop",
+        "model": "openai/gpt-4o",
+        "instructions": "Research and calculate market projections.",
+        "input": "Project AI market size for 2030",
+        "tools": ["search", "calculate"],
+        "path": "/result",
+    }
+]
+
+result = engine.apply(spec, source={}, dest={})
+
+# Detailed span breakdown
+for span in tracer.spans:
+    print(f"[{span.operation}] {span.name} — {span.status} ({span.duration_ms:.0f}ms)")
+
+# Cost summary
+print(f"\nTotal: {cost.total_input_tokens} in / {cost.total_output_tokens} out tokens")
+print(f"Estimated cost: ${cost.total_cost:.4f}")
+
+# Export for Datadog, Grafana, etc.
+import json
+print(json.dumps(tracer.to_dict(), indent=2))
+```
+
+---
+
 ## Installation
 
 Requires Python 3.10+.
@@ -634,7 +1059,7 @@ uv publish
 ## Development
 
 ```bash
-git clone https://github.com/denys/perm-agent.git
+git clone https://github.com/Shtomuch/perm-agent.git
 cd perm-agent
 uv sync
 uv run pytest
